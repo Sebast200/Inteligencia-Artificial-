@@ -6,7 +6,6 @@ import time
 
 # -------- CONFIGURACIÓN --------
 ROW_COUNT = 6
-#COLUMN_COUNT es la cantidad de columnas que presentara el juego
 COLUMN_COUNT = 7
 SQUARESIZE = 100
 RADIUS = int(SQUARESIZE / 2 - 8)
@@ -60,14 +59,17 @@ def dibujar_tablero(tablero):
     for c in range(COLUMN_COUNT):
         for r in range(ROW_COUNT):
             pygame.draw.rect(screen, AZUL, (c * SQUARESIZE, (r + 1) * SQUARESIZE, SQUARESIZE, SQUARESIZE))
-            pygame.draw.circle(screen, NEGRO, (int(c * SQUARESIZE + SQUARESIZE / 2), int((r + 1) * SQUARESIZE + SQUARESIZE / 2)), RADIUS)
+            pygame.draw.circle(screen, NEGRO, (int(c * SQUARESIZE + SQUARESIZE / 2),
+                                               int((r + 1) * SQUARESIZE + SQUARESIZE / 2)), RADIUS)
 
     for c in range(COLUMN_COUNT):
         for r in range(ROW_COUNT):
             if tablero[r][c] == 1:
-                pygame.draw.circle(screen, ROJO, (int(c * SQUARESIZE + SQUARESIZE / 2), height - int(r * SQUARESIZE + SQUARESIZE / 2)), RADIUS)
+                pygame.draw.circle(screen, ROJO, (int(c * SQUARESIZE + SQUARESIZE / 2),
+                                                  height - int(r * SQUARESIZE + SQUARESIZE / 2)), RADIUS)
             elif tablero[r][c] == 2:
-                pygame.draw.circle(screen, AMARILLO, (int(c * SQUARESIZE + SQUARESIZE / 2), height - int(r * SQUARESIZE + SQUARESIZE / 2)), RADIUS)
+                pygame.draw.circle(screen, AMARILLO, (int(c * SQUARESIZE + SQUARESIZE / 2),
+                                                      height - int(r * SQUARESIZE + SQUARESIZE / 2)), RADIUS)
     pygame.display.update()
 
 def animar_caida(col, fila_final, color):
@@ -90,6 +92,7 @@ def reiniciar_juego():
     ganador_texto = None
     dibujar_tablero(tablero)
     pygame.draw.rect(screen, NEGRO, (0, 0, width, SQUARESIZE))
+    
     pygame.display.update()
 
 # -------- MAIN LOOP --------
@@ -98,22 +101,22 @@ game_over = False
 turno = 0
 
 pygame.init()
-#que pasa si cambio esto? la configuracion por defecto es:
-#width = COLUMN_COUNTE * SQUARESIZE
-width = COLUMN_COUNT * SQUARESIZE + 500
+width = COLUMN_COUNT * SQUARESIZE + 400
 height = (ROW_COUNT + 1) * SQUARESIZE
 size = (width, height)
-#quiero agregar una variable que cuente la cantidad de partidas
+
+# Estadísticas
 num_games = 1
+victorias_j1 = 0
+victorias_j2 = 0
 
 screen = pygame.display.set_mode(size)
-pygame.display.set_caption("Conecta 4 - Reinicio 🎮")
+pygame.display.set_caption("Conecta 4 - Marcador 🎮")
 dibujar_tablero(tablero)
 pygame.display.update()
 
 fuente = pygame.font.SysFont("arial", 45, bold=True)
-#fuente para el contador
-fuente_num_games = pygame.font.SysFont("arial", 25, bold=True)
+fuente_small = pygame.font.SysFont("arial", 25, bold=True)
 
 columna_actual = COLUMN_COUNT // 2
 ganador_texto = None
@@ -144,32 +147,48 @@ while True:
                             ganador_texto = f"¡Jugador {pieza} gana!"
                             game_over = True
 
+                            # Actualizar victorias
+                            if pieza == 1:
+                                victorias_j1 += 1
+                            else:
+                                victorias_j2 += 1
+
                         turno = (turno + 1) % 2
                         dibujar_tablero(tablero)
 
-            # Reiniciar si el juego terminó y se presiona espacio
+            # Reiniciar si el juego terminó
             elif event.key == pygame.K_SPACE:
-                num_games = num_games + 1
+                num_games += 1
                 reiniciar_juego()
 
-    # Dibujar ficha superior y mensaje de ganador
+    # Dibujar HUD superior
     pygame.draw.rect(screen, NEGRO, (0, 0, width, SQUARESIZE))
-    
-    #esto dibuja la letra de numero de partidas
-    texto_partidas = fuente_num_games.render(f"Partidas jugadas: {num_games}", True, BLANCO)
-    #AQUI DEBO REVISAR SI HAY FORMA DE HACER QUE EL TEXTO NO SE VAYA A CORRER MUCHO POR LA CANTIDAD DE PARTIDAS
-    screen.blit(texto_partidas, (width - 300, 10))  
+    # PANEL DERECHO (fondo)
+    pygame.draw.rect(screen, NEGRO, (COLUMN_COUNT * SQUARESIZE, 0,
+                                    width - COLUMN_COUNT * SQUARESIZE,
+                                    height))
 
+    # Contador de partidas
+    texto_partidas = fuente_small.render(f"Partida N°: {num_games}", True, BLANCO)
+    screen.blit(texto_partidas, (COLUMN_COUNT * SQUARESIZE + 30, 10))
+
+    # Marcador
+    marcador_j1 = fuente_small.render(f"Jugador 1: {victorias_j1}", True, ROJO)
+    marcador_j2 = fuente_small.render(f"Jugador 2: {victorias_j2}", True, AMARILLO)
+
+    screen.blit(marcador_j1, (COLUMN_COUNT * SQUARESIZE + 30, 60))
+    screen.blit(marcador_j2, (COLUMN_COUNT * SQUARESIZE + 30, 100))
+
+    # Ficha superior o texto de ganador
     if not game_over:
         color = ROJO if turno == 0 else AMARILLO
-        pygame.draw.circle(screen, color, (int(columna_actual * SQUARESIZE + SQUARESIZE / 2), int(SQUARESIZE / 2)), RADIUS)
+        pygame.draw.circle(screen, color, (int(columna_actual * SQUARESIZE + SQUARESIZE / 2),
+                                           int(SQUARESIZE / 2)), RADIUS)
     else:
         texto = fuente.render(ganador_texto, True, ROJO if turno == 1 else AMARILLO)
-        screen.blit(texto, (width / 2 - texto.get_width() / 2, 10))
+        screen.blit(texto, (20, 10))
 
-        texto2 = pygame.font.SysFont("arial", 28).render("Presiona ESPACIO para jugar de nuevo", True, BLANCO)
-        screen.blit(texto2, (width / 2 - texto2.get_width() / 2, 60))
-
-        
+        texto2 = fuente_small.render("Presiona ESPACIO para jugar de nuevo", True, BLANCO)
+        screen.blit(texto2, (20, 60))
 
     pygame.display.update()
