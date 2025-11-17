@@ -37,8 +37,9 @@ ALPHA = 0.1
 EPSILON_HUMAN = 0.1   # Exploración cuando juega vs humano
 EPSILON_TRAIN = 0.2   # Exploración cuando entrena vs otras IAs
 
-# Archivo de valores TD
-VALUES_FILE = "td_values.pkl"
+# Archivos persistentes
+VALUES_FILE = "td_values.pkl"    # valores de TD
+STATS_FILE  = "td_stats.pkl"     # estadísticas globales
 
 # Profundidad de Minimax
 MAX_DEPTH = 4
@@ -56,10 +57,26 @@ player_roles = {}              # {J1: role, J2: role}
 ganador_texto = ""
 ultimo_ganador = None
 
-# Estadísticas
+# Estadísticas en memoria (además de V)
+def default_stats():
+    return {
+        "total_games": 0,
+        1: {"games": 0, "td_wins": 0, "opp_wins": 0, "draws": 0},
+        2: {"games": 0, "td_wins": 0, "opp_wins": 0, "draws": 0},
+        3: {"games": 0, "td_wins": 0, "opp_wins": 0, "draws": 0},
+    }
+
+stats = default_stats()
+
+# Contadores sesión actual (solo visual)
 num_games = 0
 victorias_j1 = 0
 victorias_j2 = 0
+
+# Info de depuración / aprendizaje
+ultimo_mov_td = "-"
+valor_estado_actual = 0.0
+epsilon_actual = 0.0
 
 # -------- FUNCIONES BÁSICAS DEL JUEGO --------
 
@@ -160,7 +177,7 @@ def dibujar_linea_ganadora(lista):
             RADIUS
         )
 
-# -------- GENERAR TABLERO REALISTA (partida ya avanzada) --------
+# -------- TABLEROS INICIALES ALEATORIOS --------
 
 def generar_tablero_partida_real():
     """
@@ -307,7 +324,7 @@ def minimax(tablero, depth, alpha, beta, maximizing, pieza_max):
                 break
         return best_col, value
 
-# -------- TD LEARNING (APRENDIZ) --------
+# -------- PERSISTENCIA TD & STATS --------
 
 def cargar_valores():
     global V
@@ -324,6 +341,42 @@ def guardar_valores():
     with open(VALUES_FILE, "wb") as f:
         pickle.dump(V, f)
 
+def cargar_stats():
+    global stats
+    if os.path.exists(STATS_FILE):
+        try:
+            with open(STATS_FILE, "rb") as f:
+                stats = pickle.load(f)
+        except Exception:
+            stats = default_stats()
+    else:
+        stats = default_stats()
+
+def guardar_stats():
+    with open(STATS_FILE, "wb") as f:
+        pickle.dump(stats, f)
+
+def registrar_resultado_stats(winner_mark):
+    """Actualiza estadísticas globales persistentes."""
+    if game_mode not in (1,2,3):
+        return
+    stats["total_games"] += 1
+    m = stats[game_mode]
+    m["games"] += 1
+
+    if winner_mark is None:
+        m["draws"] += 1
+    else:
+        role = player_roles.get(winner_mark)
+        if role == ROLE_TD:
+            m["td_wins"] += 1
+        else:
+            m["opp_wins"] += 1
+
+    guardar_stats()
+
+# -------- TD LEARNING (APRENDIZ) --------
+
 def get_state_key(tablero, mark):
     # Aplanar tablero y añadir quién es el aprendiz (1 ó 2)
     flat = tablero.flatten().astype(int)
@@ -338,13 +391,14 @@ def actualizar_td(reward):
     guardar_valores()
 
 def td_elegir_movimiento(tablero, mark, epsilon):
+    """Devuelve (columna, tipo_movimiento) donde tipo_movimiento es 'exploración' o 'explotación'."""
     valid_cols = get_valid_locations(tablero)
     if not valid_cols:
-        return None
+        return None, "-"
 
     # Exploración
     if random.random() < epsilon:
-        return random.choice(valid_cols)
+        return random.choice(valid_cols), "exploración"
 
     # Explotación: elegir acción que lleve a estado con mejor valor
     mejor_val = -1e9
@@ -362,14 +416,15 @@ def td_elegir_movimiento(tablero, mark, epsilon):
             mejores_cols.append(col)
 
     if not mejores_cols:
-        return random.choice(valid_cols)
-    return random.choice(mejores_cols)
+        return random.choice(valid_cols), "exploración"
+    return random.choice(mejores_cols), "explotación"
 
 # -------- GESTIÓN DE MODOS Y PARTIDAS --------
 
 def configurar_modo(modo):
-    global game_mode, player_roles, apprentice_mark, auto_restart
+    global game_mode, player_roles, apprentice_mark, auto_restart, num_games
     game_mode = modo
+    num_games = 0
     if modo == 1:
         # IA Aprendiz (amarillo) vs Humano (rojo)
         player_roles = {J1: ROLE_HUMANO, J2: ROLE_TD}
@@ -388,10 +443,14 @@ def configurar_modo(modo):
 
 def nueva_partida():
     global tablero, turno, posiciones_ganadoras, game_over, episode_states
+    global ultimo_mov_td, valor_estado_actual, epsilon_actual
     episode_states = []
     tablero, turno = generar_tablero_partida_real()
     posiciones_ganadoras = None
     game_over = False
+    ultimo_mov_td = "-"
+    valor_estado_actual = 0.0
+    epsilon_actual = 0.0
     dibujar_tablero(tablero)
 
 def obtener_texto_ganador(winner_mark):
@@ -410,9 +469,10 @@ def obtener_texto_ganador(winner_mark):
         return "Gana alguien"
 
 def fin_partida(winner_mark):
-    global game_over, ultimo_ganador, victorias_j1, victorias_j2, ganador_texto
+    global game_over, ultimo_ganador, victorias_j1, victorias_j2, ganador_texto, num_games
     game_over = True
     ultimo_ganador = winner_mark
+    num_games += 1
 
     if winner_mark == J1:
         victorias_j1 += 1
@@ -430,6 +490,7 @@ def fin_partida(winner_mark):
         if episode_states:
             actualizar_td(reward)
 
+    registrar_resultado_stats(winner_mark)
     ganador_texto = obtener_texto_ganador(winner_mark)
 
 # -------- MENÚ PRINCIPAL --------
@@ -437,7 +498,7 @@ def fin_partida(winner_mark):
 def dibujar_menu():
     screen.fill(NEGRO)
     titulo = fuente.render("Conecta 4 - Menú Principal", True, BLANCO)
-    screen.blit(titulo, (width//2 - titulo.get_width()//2, 80))
+    screen.blit(titulo, (width//2 - titulo.get_width()//2, 60))
 
     opciones = [
         "1) IA Aprendiz vs Humano",
@@ -447,7 +508,18 @@ def dibujar_menu():
     ]
     for i, txt in enumerate(opciones):
         surf = fuente_small.render(txt, True, BLANCO)
-        screen.blit(surf, (80, 180 + i*40))
+        screen.blit(surf, (80, 160 + i*40))
+
+    # Mostrar estadísticas globales resumidas
+    y0 = 160
+    x_stats = width//2 + 40
+    screen.blit(fuente_small.render("Estadísticas globales:", True, BLANCO), (x_stats, y0-30))
+    screen.blit(fuente_small.render(f"Total partidas: {stats['total_games']}", True, BLANCO), (x_stats, y0))
+
+    for modo in (1,2,3):
+        m = stats[modo]
+        txt = f"Modo {modo} - Partidas: {m['games']} | TD gana: {m['td_wins']} | Rival: {m['opp_wins']} | Emp: {m['draws']}"
+        screen.blit(fuente_small.render(txt, True, BLANCO), (x_stats, y0 + 30*modo))
 
     pygame.display.update()
 
@@ -457,13 +529,14 @@ pygame.init()
 width = COLUMN_COUNT * SQUARESIZE + 400
 height = (ROW_COUNT + 1) * SQUARESIZE
 screen = pygame.display.set_mode((width, height))
-pygame.display.set_caption("Conecta 4 - TD Learning")
+pygame.display.setCaption = pygame.display.set_caption("Conecta 4 - TD Learning")
 
 fuente = pygame.font.SysFont("arial", 45, bold=True)
-fuente_small = pygame.font.SysFont("arial", 25, bold=True)
+fuente_small = pygame.font.SysFont("arial", 22, bold=False)
 
-# Cargar valores TD persistentes
+# Cargar valores TD y estadísticas persistentes
 cargar_valores()
+cargar_stats()
 
 # Estado inicial: menú
 state = "menu"
@@ -496,23 +569,14 @@ while True:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_1:
                     configurar_modo(1)
-                    num_games = 0
-                    victorias_j1 = 0
-                    victorias_j2 = 0
                     nueva_partida()
                     state = "game"
                 elif event.key == pygame.K_2:
                     configurar_modo(2)
-                    num_games = 0
-                    victorias_j1 = 0
-                    victorias_j2 = 0
                     nueva_partida()
                     state = "game"
                 elif event.key == pygame.K_3:
                     configurar_modo(3)
-                    num_games = 0
-                    victorias_j1 = 0
-                    victorias_j2 = 0
                     nueva_partida()
                     state = "game"
                 elif event.key == pygame.K_ESCAPE:
@@ -547,7 +611,6 @@ while True:
             # Reinicio en modo humano (espacio)
             if event.type == pygame.KEYDOWN and game_mode == 1 and game_over:
                 if event.key == pygame.K_SPACE:
-                    num_games += 1
                     nueva_partida()
 
     # LÓGICA FUERA DE EVENTOS
@@ -559,18 +622,25 @@ while True:
     if state == "game":
         # Turno IA Aprendiz (TD)
         if not game_over and player_roles.get(turno) == ROLE_TD:
-            pygame.time.wait(150)
+            pygame.time.wait(120)
             # Registrar estado actual para TD
             key = get_state_key(tablero, apprentice_mark)
             episode_states.append(key)
 
             epsilon = EPSILON_TRAIN if game_mode in (2, 3) else EPSILON_HUMAN
-            col = td_elegir_movimiento(tablero, apprentice_mark, epsilon)
+            col, tipo = td_elegir_movimiento(tablero, apprentice_mark, epsilon)
             if col is not None and movimiento_valido(tablero, col):
                 fila = siguiente_fila_vacia(tablero, col)
                 color = ROJO if apprentice_mark == J1 else AMARILLO
                 animar_caida(col, fila, color)
                 soltar_pieza(tablero, fila, col, apprentice_mark)
+
+                # Info de depuración
+                ultimo_mov_td = tipo
+                epsilon_actual = epsilon
+                key2 = get_state_key(tablero, apprentice_mark)
+                valor_estado_actual = V.get(key2, 0.0)
+                episode_states.append(key2)
 
                 gan = verificar_ganador(tablero, apprentice_mark)
                 if gan:
@@ -585,7 +655,7 @@ while True:
 
         # Turno IA Minimax (perfecta o semiperfecta)
         if not game_over and player_roles.get(turno) in (ROLE_MINIMAX_PERF, ROLE_MINIMAX_SEMI):
-            pygame.time.wait(150)
+            pygame.time.wait(120)
             pieza_max = turno
             valid_moves = get_valid_locations(tablero)
 
@@ -624,23 +694,28 @@ while True:
             screen.blit(text_g, (10, 5))
             if not auto_restart and game_mode == 1:
                 text_r = fuente_small.render("Presiona ESPACIO para siguiente partida", True, BLANCO)
-                screen.blit(text_r, (10, 55))
+                screen.blit(text_r, (10, 50))
 
         # Panel derecho
         panel_rect = (COLUMN_COUNT*SQUARESIZE, 0, width-COLUMN_COUNT*SQUARESIZE, height)
         dibujar_degradado_vertical(screen, panel_rect, (40,40,40), (0,0,0))
         px = COLUMN_COUNT * SQUARESIZE + 20
 
-        # Info modo y stats
-        modo_txt = mode_labels.get(game_mode, "")
-        screen.blit(fuente_small.render(f"Modo: {modo_txt}", True, BLANCO), (px, 10))
-        screen.blit(fuente_small.render(f"Partida N°: {num_games}", True, BLANCO), (px, 40))
+        # Stats persistentes del modo actual
+        m = stats.get(game_mode, {"games":0,"td_wins":0,"opp_wins":0,"draws":0})
+        total_modo = max(1, m["games"])
+        winrate = 100.0 * m["td_wins"] / total_modo
 
-        # Info jugadores
-        rol_j1 = role_labels.get(player_roles.get(J1, "?"), "?")
-        rol_j2 = role_labels.get(player_roles.get(J2, "?"), "?")
-        screen.blit(fuente_small.render(f"J1 Rojo ({rol_j1}): {victorias_j1}", True, ROJO), (px, 80))
-        screen.blit(fuente_small.render(f"J2 Amarillo ({rol_j2}): {victorias_j2}", True, AMARILLO), (px, 110))
+        screen.blit(fuente_small.render(f"Modo: {mode_labels.get(game_mode,'')}", True, BLANCO), (px, 10))
+        screen.blit(fuente_small.render(f"Partida sesión: {num_games}", True, BLANCO), (px, 40))
+        screen.blit(fuente_small.render(f"Partidas totales (modo): {m['games']}", True, BLANCO), (px, 70))
+        screen.blit(fuente_small.render(f"TD gana: {m['td_wins']} | Rival: {m['opp_wins']} | Emp: {m['draws']}", True, BLANCO), (px, 100))
+        screen.blit(fuente_small.render(f"Winrate TD: {winrate:.1f}%", True, BLANCO), (px, 130))
+
+        screen.blit(fuente_small.render(f"Estados aprendidos: {len(V)}", True, BLANCO), (px, 170))
+        screen.blit(fuente_small.render(f"Último mov TD: {ultimo_mov_td}", True, BLANCO), (px, 200))
+        screen.blit(fuente_small.render(f"Valor V(s): {valor_estado_actual:.3f}", True, BLANCO), (px, 230))
+        screen.blit(fuente_small.render(f"Epsilon: {epsilon_actual:.2f}", True, BLANCO), (px, 260))
 
         # Ficha fantasma para humano (solo modo humano)
         if not game_over and player_roles.get(turno) == ROLE_HUMANO:
@@ -656,5 +731,4 @@ while True:
         # Auto-reinicio en modos IA vs IA
         if game_over and auto_restart:
             pygame.time.wait(150)
-            num_games += 1
             nueva_partida()
