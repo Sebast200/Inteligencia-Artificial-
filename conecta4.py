@@ -6,6 +6,7 @@ import time
 
 # -------- CONFIGURACIÓN --------
 ROW_COUNT = 6
+#COLUMN_COUNT es la cantidad de columnas que presentara el juego
 COLUMN_COUNT = 7
 SQUARESIZE = 100
 RADIUS = int(SQUARESIZE / 2 - 8)
@@ -97,9 +98,13 @@ game_over = False
 turno = 0
 
 pygame.init()
-width = COLUMN_COUNT * SQUARESIZE
+#que pasa si cambio esto? la configuracion por defecto es:
+#width = COLUMN_COUNTE * SQUARESIZE
+width = COLUMN_COUNT * SQUARESIZE + 500
 height = (ROW_COUNT + 1) * SQUARESIZE
 size = (width, height)
+#quiero agregar una variable que cuente la cantidad de partidas
+num_games = 1
 
 screen = pygame.display.set_mode(size)
 pygame.display.set_caption("Conecta 4 - Reinicio 🎮")
@@ -107,10 +112,14 @@ dibujar_tablero(tablero)
 pygame.display.update()
 
 fuente = pygame.font.SysFont("arial", 45, bold=True)
+#fuente para el contador
+fuente_num_games = pygame.font.SysFont("arial", 25, bold=True)
+
 columna_actual = COLUMN_COUNT // 2
 ganador_texto = None
 
 while True:
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             sys.exit()
@@ -140,10 +149,16 @@ while True:
 
             # Reiniciar si el juego terminó y se presiona espacio
             elif event.key == pygame.K_SPACE:
+                num_games = num_games + 1
                 reiniciar_juego()
 
     # Dibujar ficha superior y mensaje de ganador
     pygame.draw.rect(screen, NEGRO, (0, 0, width, SQUARESIZE))
+    
+    #esto dibuja la letra de numero de partidas
+    texto_partidas = fuente_num_games.render(f"Partidas jugadas: {num_games}", True, BLANCO)
+    #AQUI DEBO REVISAR SI HAY FORMA DE HACER QUE EL TEXTO NO SE VAYA A CORRER MUCHO POR LA CANTIDAD DE PARTIDAS
+    screen.blit(texto_partidas, (width - 300, 10))  
 
     if not game_over:
         color = ROJO if turno == 0 else AMARILLO
@@ -154,5 +169,7 @@ while True:
 
         texto2 = pygame.font.SysFont("arial", 28).render("Presiona ESPACIO para jugar de nuevo", True, BLANCO)
         screen.blit(texto2, (width / 2 - texto2.get_width() / 2, 60))
+
+        
 
     pygame.display.update()
