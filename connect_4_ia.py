@@ -9,12 +9,13 @@ import pickle
 
 # -------- CONFIGURACIÓN GENERAL --------
 
+#Tamaño del tablero
 ROW_COUNT = 6
 COLUMN_COUNT = 7
 SQUARESIZE = 100
 RADIUS = int(SQUARESIZE / 2 - 8)
 
-# Colores
+#Colores
 AZUL = (25, 75, 255)
 NEGRO = (20, 20, 20)
 ROJO = (230, 60, 60)
@@ -22,11 +23,11 @@ AMARILLO = (250, 230, 40)
 BLANCO = (240, 240, 240)
 VERDE = (0, 255, 0)
 
-# Jugadores en el tablero
+#Jugadores en el tablero
 J1 = 1   # Rojo
 J2 = 2   # Amarillo
 
-# Roles de agente
+#Roles de agente
 ROLE_HUMANO          = "human"
 ROLE_TD              = "td"
 ROLE_MINIMAX_PERF    = "minimax_perfect"
@@ -34,6 +35,7 @@ ROLE_MINIMAX_SEMI    = "minimax_semi"
 
 # Configuración IA TD
 ALPHA = 0.1
+GAMMA = 0.99          # Factor de descuento para TD(0)
 EPSILON_HUMAN = 0.1   # Exploración cuando juega vs humano
 EPSILON_TRAIN = 0.2   # Exploración cuando entrena vs otras IAs
 
@@ -383,10 +385,39 @@ def get_state_key(tablero, mark):
     return "".join(map(str, flat)) + f"_{mark}"
 
 def actualizar_td(reward):
+    """
+    Aplica TD(0) a la secuencia episode_states.
+    episode_states debe ser una lista de claves [s0, s1, s2, ..., sN]
+    donde sN es el estado terminal (después del último movimiento del aprendiz).
+    reward es la recompensa final (1.0 / 0.0 / -1.0) asociada al resultado del juego
+    para el aprendiz.
+    """
     global episode_states, V
+
+    if not episode_states:
+        return
+
+    # Asegurarnos de que todos los estados existan en V
     for key in episode_states:
-        old = V.get(key, 0.0)
-        V[key] = old + ALPHA * (reward - old)
+        if key not in V:
+            V[key] = 0.0
+
+    # Para cada transición s_t -> s_{t+1} con r_t = 0 (salvo transición final)
+    for i in range(len(episode_states) - 1):
+        s_t = episode_states[i]
+        s_tp1 = episode_states[i + 1]
+        v_t = V.get(s_t, 0.0)
+        v_tp1 = V.get(s_tp1, 0.0)
+        # r_t es 0 para transiciones intermedias
+        target = GAMMA * v_tp1
+        V[s_t] = v_t + ALPHA * (target - v_t)
+
+    # Actualizar el último estado hacia la recompensa final
+    last = episode_states[-1]
+    v_last = V.get(last, 0.0)
+    V[last] = v_last + ALPHA * (reward - v_last)
+
+    # Limpiar episodio y persistir
     episode_states = []
     guardar_valores()
 
