@@ -18,6 +18,16 @@ from game import (
 )
 
 
+#---------------------------------
+# ruta correcta basada en este archivo
+#---------------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+#estos son los nombres de los archivos donde se guardan los valores y estadisticas
+VALUES_FILE = os.path.join(BASE_DIR, "td_values.pkl")
+STATS_FILE  = os.path.join(BASE_DIR, "td_stats.pkl")
+
+
 #---configuraciones de TD(0)
 #Alpha es la tasa de aprendizaje. determina cuanto ajusta el valor al aprender
 ALPHA = 0.1
@@ -26,8 +36,6 @@ GAMMA = 0.99
 #Epsilon es la probabilidad de exploracion (jugar aleatorio en vez de mejor valor)
 EPSILON = 0.20 
 #estos son los nombres de los archivos donde se guardan los valores y estadisticas
-VALUES_FILE = "td_values.pkl"
-STATS_FILE  = "td_stats.pkl"
 
 
 #---tabla de valores V(s) para los estados
