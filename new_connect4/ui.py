@@ -476,6 +476,18 @@ def main():
             screen.blit(fuente_small.render(f"Partidas totales (modo): {m['games']}", True, BLANCO), (px,70))
             screen.blit(fuente_small.render(f"TD gana: {m['td_wins']} | Rival: {m['opp_wins']} | Emp: {m['draws']}", True, BLANCO), (px,100))
 
+            screen.blit(fuente_small.render(f"TD gana: {m['td_wins']} | Rival: {m['opp_wins']} | Emp: {m['draws']}", True, BLANCO), (px,100))
+
+            #NUEVO: cálculo y visualización del winrate del TD
+            if m["games"] > 0:
+                winrate_td = (m["td_wins"] / m["games"]) * 100
+                screen.blit(fuente_small.render(f"Winrate TD: {winrate_td:.1f}%", True, BLANCO), (px,130))
+
+            screen.blit(fuente_small.render(f"Estados aprendidos: {len(td.V)}", True, BLANCO), (px,170))
+            screen.blit(fuente_small.render(f"Último mov TD: {ultimo_mov_td}", True, BLANCO), (px,200))
+            screen.blit(fuente_small.render(f"Valor V(s): {valor_estado_actual:.3f}", True, BLANCO), (px,230))
+            screen.blit(fuente_small.render(f"Epsilon: {epsilon_actual:.2f}", True, BLANCO), (px,260))
+
             screen.blit(fuente_small.render(f"Estados aprendidos: {len(td.V)}", True, BLANCO), (px,170))
             screen.blit(fuente_small.render(f"Último mov TD: {ultimo_mov_td}", True, BLANCO), (px,200))
             screen.blit(fuente_small.render(f"Valor V(s): {valor_estado_actual:.3f}", True, BLANCO), (px,230))
