@@ -34,7 +34,7 @@ ALPHA = 0.1
 #Gamma es el descuento, determina la importancia de las recompensas futuras
 GAMMA = 0.99
 #Epsilon es la probabilidad de exploracion (jugar aleatorio en vez de mejor valor)
-EPSILON = 0.20 
+EPSILON = 0.25
 #estos son los nombres de los archivos donde se guardan los valores y estadisticas
 
 

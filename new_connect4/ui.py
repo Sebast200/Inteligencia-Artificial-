@@ -35,7 +35,7 @@ VERDE = (0, 255, 0)
 ALPHA = getattr(td, "ALPHA", 0.1)
 GAMMA = getattr(td, "GAMMA", 0.99)
 EPSILON_HUMAN = 0.1      #epsilon más bajo cuando se juega contra humano
-EPSILON_TRAIN = 0.2      #epsilon más alto durante entrenamiento IA vs IA
+EPSILON_TRAIN = 0.25      #epsilon más alto durante entrenamiento IA vs IA
 MAX_DEPTH = 4            #profundidad de minimax
 ERROR_PROB = 0.25        #probabilidad de error de la IA semiperfecta
 
@@ -511,6 +511,7 @@ def main():
                     td.actualizar_td(resultado)
                     registrar_resultado_stats(stats, game_mode, player_roles, ultimo_ganador)
 
+                num_games += 1
                 pygame.time.wait(150)
                 nueva_partida()
 
