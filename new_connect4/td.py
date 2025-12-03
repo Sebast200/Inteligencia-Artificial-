@@ -34,7 +34,7 @@ ALPHA = 0.1
 #Gamma es el descuento, determina la importancia de las recompensas futuras
 GAMMA = 0.99
 #Epsilon es la probabilidad de exploracion (jugar aleatorio en vez de mejor valor)
-EPSILON = 0.25
+EPSILON = 0.20
 #estos son los nombres de los archivos donde se guardan los valores y estadisticas
 
 
@@ -82,13 +82,15 @@ def td_elegir_movimiento(tablero, pieza):
         #con probabilidad epsilon, explora (hace un movimiento aleatorio)
         #lo que permite aprender nuevos estados
         valid = [c for c in range(COLUMN_COUNT) if movimiento_valido(tablero, c)]
+        if not valid: return None, "bloqueado" # seguridad extra
         return random.choice(valid), "exploración"
 
     #en el caso de que no explore, explota (elige el mejor movimiento conocido)
     #aqui se inicializan las variables para encontrar el mejor movimiento
     best_value = -999999
-    best_col = None
+    best_moves = [] # Lista para guardar los mejores movimientos (empates)
     decision = "explotación"
+    
     #se revisan todas las columnas posibles
     for col in range(COLUMN_COUNT):
         #si el movimiento no es valido, se salta
@@ -102,10 +104,27 @@ def td_elegir_movimiento(tablero, pieza):
         key = get_state_key(copia, pieza)
         #obtiene el valor V(s) del estado resultante, si no existe en V, asume 0.0
         valor = V.get(key, 0.0)
-        #si el valor es mejor que el mejor encontrado hasta ahora, lo actualiza
+        
+        #--- Lógica de Desempate Aleatorio ---
+        #si el valor es estrictamente mejor, reiniciamos la lista de mejores
         if valor > best_value:
             best_value = valor
-            best_col = col
+            best_moves = [col]
+        #si el valor es igual al mejor, lo añadimos a la lista
+        elif valor == best_value:
+            best_moves.append(col)
+            
+    #Si encontramos movimientos validos, elegimos uno al azar de los mejores
+    if best_moves:
+        best_col = random.choice(best_moves)
+    else:
+        #Fallback por seguridad (si no hubo moves validos o algo fallo)
+        valid = [c for c in range(COLUMN_COUNT) if movimiento_valido(tablero, c)]
+        if valid:
+            best_col = random.choice(valid)
+        else:
+            return None, "empate/lleno"
+
     #retorna el mejor movimiento encontrado junto con el tipo de decision
     return best_col, decision
 

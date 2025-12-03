@@ -35,9 +35,12 @@ VERDE = (0, 255, 0)
 ALPHA = getattr(td, "ALPHA", 0.1)
 GAMMA = getattr(td, "GAMMA", 0.99)
 EPSILON_HUMAN = 0.1      #epsilon más bajo cuando se juega contra humano
-EPSILON_TRAIN = 0.25      #epsilon más alto durante entrenamiento IA vs IA
+EPSILON_TRAIN = 0.20     #epsilon más alto durante entrenamiento IA vs IA
 MAX_DEPTH = 4            #profundidad de minimax
-ERROR_PROB = 0.25        #probabilidad de error de la IA semiperfecta
+
+#--- PROBABILIDADES DE ERROR ---
+ERROR_PROB_SEMI = 0.25   # IA Semiperfecta (25% error)
+ERROR_PROB_WEAK = 0.60   # IA Débil / Semi-Semi (60% error)
 
 STATS_FILE = getattr(td, "STATS_FILE", "td_stats.pkl")
 
@@ -53,6 +56,7 @@ def default_stats():
         1: {"games": 0, "td_wins": 0, "opp_wins": 0, "draws": 0},
         2: {"games": 0, "td_wins": 0, "opp_wins": 0, "draws": 0},
         3: {"games": 0, "td_wins": 0, "opp_wins": 0, "draws": 0},
+        4: {"games": 0, "td_wins": 0, "opp_wins": 0, "draws": 0}, # NUEVO MODO
     }
 
 def cargar_stats():
@@ -74,7 +78,8 @@ def guardar_stats(s):
 
 def registrar_resultado_stats(stats, game_mode, player_roles, winner_mark):
     #actualiza la tabla de estadísticas según el ganador
-    if game_mode not in (1,2,3):
+    #Ahora aceptamos modo 1, 2, 3 y 4
+    if game_mode not in (1, 2, 3, 4):
         return
 
     stats["total_games"] += 1
@@ -152,18 +157,23 @@ def main():
     pygame.init()
 
     #tamaño total de ventana (tablero + panel derecho)
-    width = COLUMN_COUNT * SQUARESIZE + 400
+    #Aumentamos un poco el ancho para que quepa bien el texto
+    width = COLUMN_COUNT * SQUARESIZE + 450 
     height = (ROW_COUNT + 1) * SQUARESIZE
     screen = pygame.display.set_mode((width, height))
     pygame.display.set_caption("Conecta 4 - TD Learning")
 
     #fuentes del texto
     fuente = pygame.font.SysFont("arial", 45, bold=True)
-    fuente_small = pygame.font.SysFont("arial", 22, bold=False)
+    fuente_small = pygame.font.SysFont("arial", 20, bold=False) #Un poco mas pequeña para que quepa todo
 
     #cargar valores aprendidos y estadísticas
     td.cargar_valores()
     stats = cargar_stats()
+    
+    #Si cargamos stats viejas que no tienen modo 4, lo añadimos
+    if 4 not in stats:
+        stats[4] = {"games": 0, "td_wins": 0, "opp_wins": 0, "draws": 0}
 
     #estado inicial
     state = "menu"
@@ -178,18 +188,21 @@ def main():
     ROLE_TD = "td"
     ROLE_MINIMAX_PERF = "minimax_perfect"
     ROLE_MINIMAX_SEMI = "minimax_semi"
+    ROLE_MINIMAX_WEAK = "minimax_weak" # NUEVO ROL
 
     role_labels = {
         ROLE_HUMANO: "Humano",
         ROLE_TD: "Aprendiz",
         ROLE_MINIMAX_PERF: "IA Perfecta",
-        ROLE_MINIMAX_SEMI: "IA Semiperfecta"
+        ROLE_MINIMAX_SEMI: "IA Semiperfecta",
+        ROLE_MINIMAX_WEAK: "IA Débil"
     }
 
     mode_labels = {
         1: "Aprendiz vs Humano",
         2: "Aprendiz vs IA Perfecta",
-        3: "Aprendiz vs IA Semiperfecta"
+        3: "Aprendiz vs IA Semiperfecta",
+        4: "Aprendiz vs IA Débil" # NUEVA ETIQUETA
     }
 
     #variables de configuración del modo
@@ -200,6 +213,7 @@ def main():
 
     #contadores de la sesión actual
     num_games = 0
+    session_td_wins = 0
 
     #info de depuración del TD
     ultimo_mov_td = "-"
@@ -210,9 +224,11 @@ def main():
 
     #función: configurar el modo jugable actual
     def configurar_modo(modo):
-        nonlocal game_mode, player_roles, apprentice_mark, auto_restart, num_games
+        nonlocal game_mode, player_roles, apprentice_mark, auto_restart, num_games, session_td_wins
         game_mode = modo
         num_games = 0
+        session_td_wins = 0 
+        
         #humano vs aprendiz
         if modo == 1:        
             player_roles = {J1: ROLE_HUMANO, J2: ROLE_TD}
@@ -228,6 +244,11 @@ def main():
             player_roles = {J1: ROLE_TD, J2: ROLE_MINIMAX_SEMI}
             apprentice_mark = J1
             auto_restart = True
+        #aprendiz vs ia débil (semi-semi)
+        elif modo == 4:
+            player_roles = {J1: ROLE_TD, J2: ROLE_MINIMAX_WEAK}
+            apprentice_mark = J1
+            auto_restart = True
 
     #iniciar una partida nueva
     def nueva_partida():
@@ -236,7 +257,13 @@ def main():
         #limpiar los estados vistos anteriormente
         td.episode_states.clear()   
 
-        tablero, turno = generar_tablero_partida_real()
+        # Alternar entre vacío y aleatorio (50/50)
+        if random.random() < 0.5:
+            tablero = crear_tablero()
+            turno = J1
+        else:
+            tablero, turno = generar_tablero_partida_real()
+
         posiciones_ganadoras = None
         game_over = False
         ultimo_mov_td = "-"
@@ -247,8 +274,6 @@ def main():
 
     #generación de posiciones aleatorias para entrenamiento
     def generar_tablero_partida_real():
-        #genera un estado intermedio aleatorio evitando estados ya ganados
-        #esto aumenta la variedad de situaciones desde las que el TD aprende
         while True:
             t = crear_tablero()
             jugadas_previas = random.randint(0, ROW_COUNT * COLUMN_COUNT - 12)
@@ -271,7 +296,6 @@ def main():
                 if verificar_ganador(t, J1) or verificar_ganador(t, J2):
                     break
             else:
-                #si no hubo ganador, el turno siguiente es coherente
                 siguiente = random.choice([J1, J2]) if len(turnos)==0 else (J2 if turnos[-1]==J1 else J1)
                 return t, siguiente
 
@@ -280,7 +304,7 @@ def main():
 
     #main loop
     while True:
-        #eventos (teclado, mouse, cerrar ventana)
+        #eventos
         for event in pygame.event.get():
 
             if event.type == pygame.QUIT:
@@ -303,14 +327,17 @@ def main():
                         configurar_modo(3)
                         nueva_partida()
                         state = "game"
+                    elif event.key == pygame.K_4: # NUEVA TECLA
+                        configurar_modo(4)
+                        nueva_partida()
+                        state = "game"
                     elif event.key == pygame.K_ESCAPE:
                         td.guardar_valores()
                         pygame.quit()
                         sys.exit()
 
-            #interacción humana en la partida
+            #interacción humana
             elif state == "game":
-                #movimiento del jugador humano
                 if event.type == pygame.KEYDOWN and not game_over and player_roles.get(turno)==ROLE_HUMANO:
                     if event.key == pygame.K_LEFT:
                         columna_actual = max(0, columna_actual - 1)
@@ -340,38 +367,44 @@ def main():
                             if game_over and not auto_restart:
                                 continue
 
-                #reinicio cuando humano está jugando
+                #reinicio manual
                 if event.type == pygame.KEYDOWN and game_mode==1 and game_over:
                     if event.key == pygame.K_SPACE:
+                        if ultimo_ganador == apprentice_mark:
+                            session_td_wins += 1
+                            num_games += 1
                         nueva_partida()
 
-        #lógica de menú
+        #lógica de menú visual
         if state == "menu":
             screen.fill(NEGRO)
             titulo = fuente.render("Conecta 4 - Menú Principal", True, BLANCO)
-            screen.blit(titulo, (width//2 - titulo.get_width()//2, 60))
+            screen.blit(titulo, (width//2 - titulo.get_width()//2, 50))
 
             opciones = [
-                "1) IA Aprendiz vs Humano",
-                "2) IA Aprendiz vs IA Perfecta (Minimax)",
-                "3) IA Aprendiz vs IA Semiperfecta (Minimax Aleatoria)",
+                "1) Aprendiz vs Humano",
+                "2) Aprendiz vs IA Perfecta",
+                "3) Aprendiz vs IA Semiperfecta (25% error)",
+                "4) Aprendiz vs IA Débil (60% error)", # NUEVA OPCION
                 "ESC) Salir"
             ]
 
             for i, txt in enumerate(opciones):
                 surf = fuente_small.render(txt, True, BLANCO)
-                screen.blit(surf, (80, 160 + i*40))
+                screen.blit(surf, (80, 140 + i*35))
 
             #mostrar estadísticas globales
-            y0 = 160
+            y0 = 140
             x_stats = width//2 + 40
             screen.blit(fuente_small.render("Estadísticas globales:", True, BLANCO), (x_stats, y0-30))
             screen.blit(fuente_small.render(f"Total partidas: {stats['total_games']}", True, BLANCO), (x_stats, y0))
 
-            for modo in (1,2,3):
+            # Iteramos hasta el modo 4
+            for modo in (1,2,3,4):
+                if modo not in stats: continue
                 m = stats[modo]
-                txt = f"Modo {modo} - Partidas: {m['games']} | TD gana: {m['td_wins']} | Rival: {m['opp_wins']} | Emp: {m['draws']}"
-                screen.blit(fuente_small.render(txt, True, BLANCO), (x_stats, y0+30*modo))
+                txt = f"M{modo}: {m['games']} | TD: {m['td_wins']} | Riv: {m['opp_wins']} | Emp: {m['draws']}"
+                screen.blit(fuente_small.render(txt, True, BLANCO), (x_stats, y0+25*modo))
 
             pygame.display.update()
             clock.tick(10)
@@ -382,12 +415,10 @@ def main():
 
             #turno del TD (aprendiz)
             if not game_over and player_roles.get(turno)==ROLE_TD:
-                pygame.time.wait(120)
+                pygame.time.wait(120) # velocidad de juego
 
                 td.registrar_estado(tablero, apprentice_mark)
-
-                #ajustar epsilon según modo
-                td.EPSILON = EPSILON_TRAIN if game_mode in (2,3) else EPSILON_HUMAN
+                td.EPSILON = EPSILON_TRAIN if game_mode in (2,3,4) else EPSILON_HUMAN
 
                 col, tipo = td.td_elegir_movimiento(tablero, apprentice_mark)
 
@@ -410,24 +441,38 @@ def main():
                         posiciones_ganadoras = gan
                         game_over = True
                         ultimo_ganador = apprentice_mark
+                        if not auto_restart:
+                            num_games += 1
+                            session_td_wins += 1
                     elif tablero_lleno(tablero):
                         game_over = True
                         ultimo_ganador = None
+                        if not auto_restart:
+                            num_games += 1
                     else:
                         turno = J1 if apprentice_mark==J2 else J2
 
                     dibujar_tablero_pygame(screen, tablero, width, height)
 
-            #turno de IA Minimax (perfecta o semiperfecta)
-            if not game_over and player_roles.get(turno) in (ROLE_MINIMAX_PERF, ROLE_MINIMAX_SEMI):
+            #turno de IA Minimax (PERFECTA, SEMI o DEBIL)
+            rival_roles = (ROLE_MINIMAX_PERF, ROLE_MINIMAX_SEMI, ROLE_MINIMAX_WEAK)
+            if not game_over and player_roles.get(turno) in rival_roles:
                 pygame.time.wait(120)
                 pieza_max = turno
                 valid_moves = get_valid_locations(tablero)
+                role_actual = player_roles[turno]
+                
+                # Determinamos si comete error
+                cometer_error = False
+                if role_actual == ROLE_MINIMAX_SEMI and random.random() < ERROR_PROB_SEMI:
+                    cometer_error = True
+                elif role_actual == ROLE_MINIMAX_WEAK and random.random() < ERROR_PROB_WEAK:
+                    cometer_error = True
 
-                #ia semiperfecta tiene errores intencionales
-                if player_roles[turno]==ROLE_MINIMAX_SEMI and random.random() < ERROR_PROB:
+                if cometer_error:
                     col = random.choice(valid_moves)
                 else:
+                    # Juega perfecto
                     col, _ = minimax(tablero, MAX_DEPTH, -math.inf, math.inf, True, pieza_max)
 
                 if movimiento_valido(tablero, col):
@@ -449,7 +494,7 @@ def main():
 
                     dibujar_tablero_pygame(screen, tablero, width, height)
 
-            #hud superior y panel lateral informativo
+            #hud superior
             pygame.draw.rect(screen, NEGRO, (0,0,width,SQUARESIZE))
 
             if game_over:
@@ -461,39 +506,40 @@ def main():
                 screen.blit(text_g, (10,5))
 
                 if not auto_restart and game_mode==1:
-                    text_r = fuente_small.render("Presiona ESPACIO para siguiente partida", True, BLANCO)
+                    text_r = fuente_small.render("ESPACIO para reiniciar", True, BLANCO)
                     screen.blit(text_r, (10,50))
 
-            #panel lateral a la derecha
+            #panel lateral
             pygame.draw.rect(screen, (40,40,40),
                              (COLUMN_COUNT*SQUARESIZE, 0, width-COLUMN_COUNT*SQUARESIZE, height))
 
-            px = COLUMN_COUNT * SQUARESIZE + 20
+            px = COLUMN_COUNT * SQUARESIZE + 15
             m = stats.get(game_mode, {"games":0,"td_wins":0,"opp_wins":0,"draws":0})
 
             screen.blit(fuente_small.render(f"Modo: {mode_labels.get(game_mode,'')}", True, BLANCO), (px,10))
-            screen.blit(fuente_small.render(f"Partida sesión: {num_games}", True, BLANCO), (px,40))
-            screen.blit(fuente_small.render(f"Partidas totales (modo): {m['games']}", True, BLANCO), (px,70))
-            screen.blit(fuente_small.render(f"TD gana: {m['td_wins']} | Rival: {m['opp_wins']} | Emp: {m['draws']}", True, BLANCO), (px,100))
+            screen.blit(fuente_small.render(f"Sesión: {num_games}", True, BLANCO), (px,40))
 
-            screen.blit(fuente_small.render(f"TD gana: {m['td_wins']} | Rival: {m['opp_wins']} | Emp: {m['draws']}", True, BLANCO), (px,100))
+            if num_games > 0:
+                winrate_session = (session_td_wins / num_games) * 100
+                col_wr = VERDE if winrate_session >= 50 else ROJO
+                txt_session = f"WR Ses: {winrate_session:.1f}% ({session_td_wins}/{num_games})"
+                screen.blit(fuente_small.render(txt_session, True, col_wr), (px, 60))
+            else:
+                screen.blit(fuente_small.render("WR Ses: -", True, BLANCO), (px, 60))
 
-            #NUEVO: cálculo y visualización del winrate del TD
+            screen.blit(fuente_small.render(f"Global (Modo): {m['games']}", True, BLANCO), (px,90))
+            screen.blit(fuente_small.render(f"TD: {m['td_wins']} | Riv: {m['opp_wins']} | Emp: {m['draws']}", True, BLANCO), (px,120))
+
             if m["games"] > 0:
                 winrate_td = (m["td_wins"] / m["games"]) * 100
-                screen.blit(fuente_small.render(f"Winrate TD: {winrate_td:.1f}%", True, BLANCO), (px,130))
+                screen.blit(fuente_small.render(f"WR Global: {winrate_td:.1f}%", True, BLANCO), (px,150))
 
-            screen.blit(fuente_small.render(f"Estados aprendidos: {len(td.V)}", True, BLANCO), (px,170))
-            screen.blit(fuente_small.render(f"Último mov TD: {ultimo_mov_td}", True, BLANCO), (px,200))
-            screen.blit(fuente_small.render(f"Valor V(s): {valor_estado_actual:.3f}", True, BLANCO), (px,230))
-            screen.blit(fuente_small.render(f"Epsilon: {epsilon_actual:.2f}", True, BLANCO), (px,260))
+            screen.blit(fuente_small.render(f"Estados: {len(td.V)}", True, BLANCO), (px,190))
+            screen.blit(fuente_small.render(f"Mov TD: {ultimo_mov_td}", True, BLANCO), (px,220))
+            screen.blit(fuente_small.render(f"V(s): {valor_estado_actual:.3f}", True, BLANCO), (px,250))
+            screen.blit(fuente_small.render(f"Epsilon: {epsilon_actual:.2f}", True, BLANCO), (px,280))
 
-            screen.blit(fuente_small.render(f"Estados aprendidos: {len(td.V)}", True, BLANCO), (px,170))
-            screen.blit(fuente_small.render(f"Último mov TD: {ultimo_mov_td}", True, BLANCO), (px,200))
-            screen.blit(fuente_small.render(f"Valor V(s): {valor_estado_actual:.3f}", True, BLANCO), (px,230))
-            screen.blit(fuente_small.render(f"Epsilon: {epsilon_actual:.2f}", True, BLANCO), (px,260))
-
-            #ficha fantasma del jugador humano
+            #ficha fantasma humano
             if not game_over and player_roles.get(turno)==ROLE_HUMANO:
                 pygame.draw.circle(screen, ROJO,
                     (int(columna_actual*SQUARESIZE+SQUARESIZE/2), int(SQUARESIZE/2)), RADIUS)
@@ -504,12 +550,15 @@ def main():
 
             pygame.display.update()
 
-            #reinicio automático (solo IA vs IA)
+            #reinicio automático
             if game_over and auto_restart:
                 if apprentice_mark is not None:
                     resultado = td.obtener_recompensa(tablero, apprentice_mark)
                     td.actualizar_td(resultado)
                     registrar_resultado_stats(stats, game_mode, player_roles, ultimo_ganador)
+
+                    if ultimo_ganador == apprentice_mark:
+                        session_td_wins += 1
 
                 num_games += 1
                 pygame.time.wait(150)
